@@ -9,9 +9,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+
+
+
 
 import httpretty
 import pytest
@@ -23,7 +23,7 @@ try:
     from unittest import mock
 except ImportError:
     # python 2
-    import mock
+    from unittest import mock
 
 from requests_kerberos.exceptions import KerberosExchangeError
 from trino.client import PROXIES, TrinoQuery, TrinoRequest, TrinoResult
@@ -292,7 +292,7 @@ def test_trino_initial_request(monkeypatch):
     assert status.id == RESP_DATA_POST_0["id"]
 
 
-class ArgumentsRecorder(object):
+class ArgumentsRecorder:
     def __init__(self):
         # Prevent functools.wraps from complaining when it decorates the
         # instance.
@@ -345,7 +345,7 @@ def test_request_headers(monkeypatch):
         assert headers[constants.HEADER_SESSION] == ""
         assert headers[accept_encoding_header] == accept_encoding_value
         assert headers[client_info_header] == client_info_value
-        assert len(headers.keys()) == 8
+        assert len(list(headers.keys())) == 8
 
     req.post("URL")
     assert_headers(post_recorder.kwargs["headers"])
@@ -520,7 +520,7 @@ def test_trino_connection_error(monkeypatch, error_code, error_type, error_messa
     assert error_message in str(error)
 
 
-class RetryRecorder(object):
+class RetryRecorder:
     def __init__(self, error=None, result=None):
         self.__name__ = "RetryRecorder"
         self._retry_count = 0
@@ -588,7 +588,7 @@ def test_503_error_retry(monkeypatch):
     assert post_retry.retry_count == attempts
 
 
-class FakeGatewayResponse(object):
+class FakeGatewayResponse:
     def __init__(self, http_response, redirect_count=1):
         self.__name__ = "FakeGatewayResponse"
         self.http_response = http_response

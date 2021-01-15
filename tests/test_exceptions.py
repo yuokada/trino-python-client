@@ -15,9 +15,9 @@ This module defines exceptions for Trino operations. It follows the structure
 defined in pep-0249.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+
+
+
 
 from trino import exceptions
 import pytest
@@ -61,7 +61,7 @@ def test_retry_with():
         max_attempts=max_attempts,
     )
 
-    class FailerUntil(object):
+    class FailerUntil:
         def __init__(self, until=1):
             self.attempt = 0
             self._until = until

@@ -9,9 +9,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+
+
+
 
 from trino import constants
 import trino.client
@@ -37,7 +37,7 @@ class IsolationLevel(object):
 
     @classmethod
     def levels(cls):
-        return {k for k in cls.__dict__.keys() if not k.startswith("_")}
+        return {k for k in list(cls.__dict__.keys()) if not k.startswith("_")}
 
     @classmethod
     def values(cls):
@@ -45,7 +45,7 @@ class IsolationLevel(object):
 
     @classmethod
     def check(cls, level):
-        if level not in cls.values():
+        if level not in list(cls.values()):
             raise ValueError("invalid isolation level {}".format(level))
         return level
 

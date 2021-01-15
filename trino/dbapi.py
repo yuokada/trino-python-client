@@ -17,9 +17,9 @@ https://www.python.org/dev/peps/pep-0249/ .
 Fetch methods returns rows as a list of lists on purpose to let the caller
 decide to convert then to a list of tuples.
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+
+
+
 
 from typing import Any, List, Optional  # NOQA for mypy types
 
@@ -27,7 +27,7 @@ try:
     from urllib.parse import urlencode
 except ImportError:
     # Python 2
-    from urllib import urlencode
+    from urllib.parse import urlencode
 
 import copy
 import uuid
