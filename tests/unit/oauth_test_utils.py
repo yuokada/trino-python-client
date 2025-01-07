@@ -14,7 +14,7 @@ import re
 import uuid
 from collections import namedtuple
 
-import httpretty
+import responses
 
 from trino import constants
 
@@ -91,14 +91,14 @@ class GetTokenCallback:
 
 def _get_token_requests(challenge_id):
     return list(filter(
-        lambda r: r.method == "GET" and r.path == f"/{TOKEN_PATH}/{challenge_id}",
-        httpretty.latest_requests()))
+        lambda r: r.method == "GET" and r.url == f"{TOKEN_RESOURCE}/{challenge_id}",
+        responses.calls))
 
 
 def _post_statement_requests():
     return list(filter(
-        lambda r: r.method == "POST" and r.path == constants.URL_STATEMENT_PATH,
-        httpretty.latest_requests()))
+        lambda r: r.method == "POST" and r.url == f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        responses.calls))
 
 
 class MultithreadedTokenServer:
@@ -111,15 +111,15 @@ class MultithreadedTokenServer:
         self.attempts = attempts
 
         # bind post statement
-        httpretty.register_uri(
-            method=httpretty.POST,
-            uri=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        responses.add(
+            method=responses.POST,
+            url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
             body=self.post_statement_callback)
 
         # bind get token
-        httpretty.register_uri(
-            method=httpretty.GET,
-            uri=re.compile(rf"{TOKEN_RESOURCE}/.*"),
+        responses.add(
+            method=responses.GET,
+            url=re.compile(rf"{TOKEN_RESOURCE}/.*"),
             body=self.get_token_callback)
 
     # noinspection PyUnusedLocal
