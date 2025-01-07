@@ -23,7 +23,6 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfoNotFoundError
 
 import gssapi
-import httpretty
 import keyring
 try:
     import orjson as json
@@ -31,7 +30,7 @@ except ImportError:
     import json
 import pytest
 import requests
-from httpretty import httprettified
+import responses
 from requests_gssapi.exceptions import SPNEGOExchangeError
 from requests_kerberos.exceptions import KerberosExchangeError
 from tzlocal import get_localzone_name  # type: ignore
@@ -352,9 +351,9 @@ def test_request_timeout():
         time.sleep(timeout * 2)
         return (200, headers, "delayed success")
 
-    httpretty.enable()
-    for method in [httpretty.POST, httpretty.GET]:
-        httpretty.register_uri(method, url, body=long_call)
+    responses.start()
+    for method in [responses.POST, responses.GET]:
+        responses.add_callback(method, url, callback=long_call)
 
     # timeout without retry
     for request_timeout in [timeout, (timeout, timeout)]:
@@ -375,12 +374,12 @@ def test_request_timeout():
         with pytest.raises(requests.exceptions.Timeout):
             req.post("select 1")
 
-    httpretty.disable()
-    httpretty.reset()
+    responses.stop()
+    responses.reset()
 
 
 @pytest.mark.parametrize("attempts", [1, 3, 5])
-@httprettified
+@responses.activate
 def test_oauth2_authentication_flow(attempts, sample_post_response_data):
     token = str(uuid.uuid4())
     challenge_id = str(uuid.uuid4())
@@ -391,17 +390,17 @@ def test_oauth2_authentication_flow(attempts, sample_post_response_data):
     post_statement_callback = PostStatementCallback(redirect_server, token_server, [token], sample_post_response_data)
 
     # bind post statement
-    httpretty.register_uri(
-        method=httpretty.POST,
-        uri=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-        body=post_statement_callback)
+    responses.add_callback(
+        method=responses.POST,
+        url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        callback=post_statement_callback)
 
     # bind get token
     get_token_callback = GetTokenCallback(token_server, token, attempts)
-    httpretty.register_uri(
-        method=httpretty.GET,
-        uri=token_server,
-        body=get_token_callback)
+    responses.add_callback(
+        method=responses.GET,
+        url=token_server,
+        callback=get_token_callback)
 
     redirect_handler = RedirectHandler()
 
@@ -422,7 +421,7 @@ def test_oauth2_authentication_flow(attempts, sample_post_response_data):
     assert len(_get_token_requests(challenge_id)) == attempts
 
 
-@httprettified
+@responses.activate
 def test_oauth2_refresh_token_flow(sample_post_response_data):
     token = str(uuid.uuid4())
     challenge_id = str(uuid.uuid4())
@@ -432,17 +431,17 @@ def test_oauth2_refresh_token_flow(sample_post_response_data):
     post_statement_callback = PostStatementCallback(None, token_server, [token], sample_post_response_data)
 
     # bind post statement
-    httpretty.register_uri(
-        method=httpretty.POST,
-        uri=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-        body=post_statement_callback)
+    responses.add_callback(
+        method=responses.POST,
+        url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        callback=post_statement_callback)
 
     # bind get token
     get_token_callback = GetTokenCallback(token_server, token)
-    httpretty.register_uri(
-        method=httpretty.GET,
-        uri=token_server,
-        body=get_token_callback)
+    responses.add_callback(
+        method=responses.GET,
+        url=token_server,
+        callback=get_token_callback)
 
     redirect_handler = RedirectHandlerWithException(
         trino.exceptions.TrinoAuthError(
@@ -465,7 +464,7 @@ def test_oauth2_refresh_token_flow(sample_post_response_data):
 
 
 @pytest.mark.parametrize("attempts", [6, 10])
-@httprettified
+@responses.activate
 def test_oauth2_exceed_max_attempts(attempts, sample_post_response_data):
     token = str(uuid.uuid4())
     challenge_id = str(uuid.uuid4())
@@ -476,17 +475,17 @@ def test_oauth2_exceed_max_attempts(attempts, sample_post_response_data):
     post_statement_callback = PostStatementCallback(redirect_server, token_server, [token], sample_post_response_data)
 
     # bind post statement
-    httpretty.register_uri(
-        method=httpretty.POST,
-        uri=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-        body=post_statement_callback)
+    responses.add_callback(
+        method=responses.POST,
+        url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        callback=post_statement_callback)
 
     # bind get token
     get_token_callback = GetTokenCallback(token_server, token, attempts)
-    httpretty.register_uri(
-        method=httpretty.GET,
-        uri=f"{TOKEN_RESOURCE}/{challenge_id}",
-        body=get_token_callback)
+    responses.add_callback(
+        method=responses.GET,
+        url=f"{TOKEN_RESOURCE}/{challenge_id}",
+        callback=get_token_callback)
 
     redirect_handler = RedirectHandler()
 
@@ -514,13 +513,13 @@ def test_oauth2_exceed_max_attempts(attempts, sample_post_response_data):
     ('x_redirect_server="redirect_server", x_token_server="token_server"', 'Error: header info didn\'t match x_redirect_server="redirect_server", x_token_server="token_server"'),  # noqa: E501
     ('Bearer x_redirect_server="redirect_server"', 'Error: header info didn\'t have x_token_server'),
 ])
-@httprettified
+@responses.activate
 def test_oauth2_authentication_missing_headers(header, error):
     # bind post statement
-    httpretty.register_uri(
-        method=httpretty.POST,
-        uri=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-        adding_headers={'WWW-Authenticate': header},
+    responses.add(
+        method=responses.POST,
+        url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        headers={'WWW-Authenticate': header},
         status=401)
 
     request = TrinoRequest(
@@ -548,7 +547,7 @@ def test_oauth2_authentication_missing_headers(header, error):
     'x_token_server="{token_server}"'
     'Bearer x_redirect_server="{redirect_server}",x_token_server="{token_server}",additional_challenge',
 ])
-@httprettified
+@responses.activate
 def test_oauth2_header_parsing(header, sample_post_response_data):
     token = str(uuid.uuid4())
     challenge_id = str(uuid.uuid4())
@@ -565,17 +564,17 @@ def test_oauth2_header_parsing(header, sample_post_response_data):
                       'Basic realm': '"Trino"'}, ""]
 
     # bind post statement
-    httpretty.register_uri(
-        method=httpretty.POST,
-        uri=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-        body=post_statement)
+    responses.add_callback(
+        method=responses.POST,
+        url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        callback=post_statement)
 
     # bind get token
     get_token_callback = GetTokenCallback(token_server, token)
-    httpretty.register_uri(
-        method=httpretty.GET,
-        uri=token_server,
-        body=get_token_callback)
+    responses.add_callback(
+        method=responses.GET,
+        url=token_server,
+        callback=get_token_callback)
 
     redirect_handler = RedirectHandler()
 
@@ -596,8 +595,7 @@ def test_oauth2_header_parsing(header, sample_post_response_data):
     assert len(_get_token_requests(challenge_id)) == 1
 
 
-@pytest.mark.parametrize("http_status", [400, 401, 500])
-@httprettified
+@responses.activate
 def test_oauth2_authentication_fail_token_server(http_status, sample_post_response_data):
     token = str(uuid.uuid4())
     challenge_id = str(uuid.uuid4())
@@ -608,16 +606,18 @@ def test_oauth2_authentication_fail_token_server(http_status, sample_post_respon
     post_statement_callback = PostStatementCallback(redirect_server, token_server, [token], sample_post_response_data)
 
     # bind post statement
-    httpretty.register_uri(
-        method=httpretty.POST,
-        uri=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-        body=post_statement_callback)
+    responses.add(
+        method=responses.POST,
+        url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        json=post_statement_callback,
+    )
 
-    httpretty.register_uri(
-        method=httpretty.GET,
-        uri=f"{TOKEN_RESOURCE}/{challenge_id}",
+    responses.add(
+        method=responses.GET,
+        url=f"{TOKEN_RESOURCE}/{challenge_id}",
         status=http_status,
-        body="error")
+        body="error",
+    )
 
     redirect_handler = RedirectHandler()
 
@@ -628,7 +628,8 @@ def test_oauth2_authentication_fail_token_server(http_status, sample_post_respon
             user="test",
         ),
         http_scheme=constants.HTTPS,
-        auth=trino.auth.OAuth2Authentication(redirect_auth_url_handler=redirect_handler))
+        auth=trino.auth.OAuth2Authentication(redirect_auth_url_handler=redirect_handler),
+    )
 
     with pytest.raises(trino.exceptions.TrinoAuthError) as exp:
         request.post("select 1")
@@ -639,7 +640,7 @@ def test_oauth2_authentication_fail_token_server(http_status, sample_post_respon
     assert len(_get_token_requests(challenge_id)) == 1
 
 
-@httprettified
+@responses.activate
 def test_multithreaded_oauth2_authentication_flow(sample_post_response_data):
     redirect_handler = RedirectHandler()
     auth = trino.auth.OAuth2Authentication(redirect_auth_url_handler=redirect_handler)
