@@ -51,9 +51,9 @@ class PostStatementCallback:
     def __call__(self, request, uri, response_headers):
         authorization = request.headers.get("Authorization")
         if authorization and authorization.replace("Bearer ", "") in self.tokens:
-            return [200, response_headers, json.dumps(self.sample_post_response_data)]
+            return (200, response_headers, json.dumps(self.sample_post_response_data))
         elif self.redirect_server is None and self.token_server is not None:
-            return [401,
+            return (401,
                     {
                         'Www-Authenticate': (
                             'Bearer realm="Trino", token_type="JWT", '
@@ -61,8 +61,8 @@ class PostStatementCallback:
                         ),
                         'Basic realm': '"Trino"'
                     },
-                    ""]
-        return [401,
+                    "")
+        return (401,
                 {
                     'Www-Authenticate': (
                         'Bearer realm="Trino", token_type="JWT", '
@@ -71,7 +71,7 @@ class PostStatementCallback:
                     ),
                     'Basic realm': '"Trino"'
                 },
-                ""]
+                "")
 
 
 class GetTokenCallback:
@@ -83,10 +83,10 @@ class GetTokenCallback:
     def __call__(self, request, uri, response_headers):
         self.attempts -= 1
         if self.attempts < 0:
-            return [404, response_headers, "{}"]
+            return (404, response_headers, "{}")
         if self.attempts == 0:
-            return [200, response_headers, f'{{"token": "{self.token}"}}']
-        return [200, response_headers, f'{{"nextUri": "{self.token_server}"}}']
+            return (200, response_headers, f'{{"token": "{self.token}"}}')
+        return (200, response_headers, f'{{"nextUri": "{self.token_server}"}}')
 
 
 def _get_token_requests(challenge_id):
@@ -127,7 +127,7 @@ class MultithreadedTokenServer:
         authorization = request.headers.get("Authorization")
 
         if authorization and authorization.replace("Bearer ", "") in self.tokens:
-            return [200, response_headers, json.dumps(self.sample_post_response_data)]
+            return (200, response_headers, json.dumps(self.sample_post_response_data))
 
         challenge_id = str(uuid.uuid4())
         token = str(uuid.uuid4())
@@ -135,9 +135,9 @@ class MultithreadedTokenServer:
         self.challenges[challenge_id] = MultithreadedTokenServer.Challenge(token, self.attempts)
         redirect_server = f"{REDIRECT_RESOURCE}/{challenge_id}"
         token_server = f"{TOKEN_RESOURCE}/{challenge_id}"
-        return [401, {'Www-Authenticate': f'Bearer x_redirect_server="{redirect_server}", '
+        return (401, {'Www-Authenticate': f'Bearer x_redirect_server="{redirect_server}", '
                                           f'x_token_server="{token_server}"',
-                      'Basic realm': '"Trino"'}, ""]
+                      'Basic realm': '"Trino"'}, "")
 
     # noinspection PyUnusedLocal
     def get_token_callback(self, request, uri, response_headers):
@@ -146,7 +146,7 @@ class MultithreadedTokenServer:
         challenge = challenge._replace(attempts=challenge.attempts - 1)
         self.challenges[challenge_id] = challenge
         if challenge.attempts < 0:
-            return [404, response_headers, "{}"]
+            return (404, response_headers, "{}")
         if challenge.attempts == 0:
-            return [200, response_headers, f'{{"token": "{challenge.token}"}}']
-        return [200, response_headers, f'{{"nextUri": "{uri}"}}']
+            return (200, response_headers, f'{{"token": "{challenge.token}"}}')
+        return (200, response_headers, f'{{"nextUri": "{uri}"}}')

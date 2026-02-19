@@ -38,7 +38,7 @@ external_authentication_token_cache_require = ["keyring"]
 all_require = kerberos_require + sqlalchemy_require
 
 tests_require = all_require + gssapi_require + [
-    "responses>=0.24.1,<1",
+    "responses>=0.25.0,<1",
     "pytest",
     "pytest-runner",
     "pre-commit",

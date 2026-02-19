@@ -559,9 +559,9 @@ def test_oauth2_header_parsing(header, sample_post_response_data):
     def post_statement(request, uri, response_headers):
         authorization = request.headers.get("Authorization")
         if authorization and authorization.replace("Bearer ", "") in token:
-            return [200, response_headers, json.dumps(sample_post_response_data)]
-        return [401, {'Www-Authenticate': header.format(redirect_server=redirect_server, token_server=token_server),
-                      'Basic realm': '"Trino"'}, ""]
+            return (200, response_headers, json.dumps(sample_post_response_data))
+        return (401, {'Www-Authenticate': header.format(redirect_server=redirect_server, token_server=token_server),
+                      'Basic realm': '"Trino"'}, "")
 
     # bind post statement
     responses.add_callback(
