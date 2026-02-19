@@ -38,9 +38,6 @@ external_authentication_token_cache_require = ["keyring"]
 all_require = kerberos_require + sqlalchemy_require
 
 tests_require = all_require + gssapi_require + [
-    # httpretty >= 1.1 duplicates requests in `httpretty.latest_requests`
-    # https://github.com/gabrielfalcao/HTTPretty/issues/425
-    "httpretty < 1.1",
     "responses>=0.24.1,<1",
     "pytest",
     "pytest-runner",
