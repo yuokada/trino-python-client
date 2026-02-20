@@ -14,11 +14,11 @@ import re
 import uuid
 from collections import namedtuple
 
-import httpretty
+import responses
 
 from trino import constants
 
-SERVER_ADDRESS = "https://coordinator"
+SERVER_ADDRESS = "https://coordinator:443"
 REDIRECT_PATH = "oauth2/initiate"
 TOKEN_PATH = "oauth2/token"
 REDIRECT_RESOURCE = f"{SERVER_ADDRESS}/{REDIRECT_PATH}"
@@ -48,12 +48,14 @@ class PostStatementCallback:
         self.tokens = tokens
         self.sample_post_response_data = sample_post_response_data
 
-    def __call__(self, request, uri, response_headers):
+    def __call__(self, request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
         authorization = request.headers.get("Authorization")
         if authorization and authorization.replace("Bearer ", "") in self.tokens:
-            return [200, response_headers, json.dumps(self.sample_post_response_data)]
+            return (200, response_headers, json.dumps(self.sample_post_response_data))
         elif self.redirect_server is None and self.token_server is not None:
-            return [401,
+            return (401,
                     {
                         'Www-Authenticate': (
                             'Bearer realm="Trino", token_type="JWT", '
@@ -61,8 +63,8 @@ class PostStatementCallback:
                         ),
                         'Basic realm': '"Trino"'
                     },
-                    ""]
-        return [401,
+                    "")
+        return (401,
                 {
                     'Www-Authenticate': (
                         'Bearer realm="Trino", token_type="JWT", '
@@ -71,7 +73,7 @@ class PostStatementCallback:
                     ),
                     'Basic realm': '"Trino"'
                 },
-                ""]
+                "")
 
 
 class GetTokenCallback:
@@ -80,25 +82,27 @@ class GetTokenCallback:
         self.token = token
         self.attempts = attempts
 
-    def __call__(self, request, uri, response_headers):
+    def __call__(self, request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
         self.attempts -= 1
         if self.attempts < 0:
-            return [404, response_headers, "{}"]
+            return (404, response_headers, "{}")
         if self.attempts == 0:
-            return [200, response_headers, f'{{"token": "{self.token}"}}']
-        return [200, response_headers, f'{{"nextUri": "{self.token_server}"}}']
+            return (200, response_headers, f'{{"token": "{self.token}"}}')
+        return (200, response_headers, f'{{"nextUri": "{self.token_server}"}}')
 
 
 def _get_token_requests(challenge_id):
     return list(filter(
-        lambda r: r.method == "GET" and r.path == f"/{TOKEN_PATH}/{challenge_id}",
-        httpretty.latest_requests()))
+        lambda r: r.request.method == "GET" and r.request.url == f"{TOKEN_RESOURCE}/{challenge_id}",
+        responses.calls))
 
 
 def _post_statement_requests():
     return list(filter(
-        lambda r: r.method == "POST" and r.path == constants.URL_STATEMENT_PATH,
-        httpretty.latest_requests()))
+        lambda r: r.request.method == "POST" and r.request.url == f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        responses.calls))
 
 
 class MultithreadedTokenServer:
@@ -111,23 +115,25 @@ class MultithreadedTokenServer:
         self.attempts = attempts
 
         # bind post statement
-        httpretty.register_uri(
-            method=httpretty.POST,
-            uri=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-            body=self.post_statement_callback)
+        responses.add_callback(
+            method=responses.POST,
+            url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+            callback=self.post_statement_callback)
 
         # bind get token
-        httpretty.register_uri(
-            method=httpretty.GET,
-            uri=re.compile(rf"{TOKEN_RESOURCE}/.*"),
-            body=self.get_token_callback)
+        responses.add_callback(
+            method=responses.GET,
+            url=re.compile(rf"{TOKEN_RESOURCE}/.*"),
+            callback=self.get_token_callback)
 
     # noinspection PyUnusedLocal
-    def post_statement_callback(self, request, uri, response_headers):
+    def post_statement_callback(self, request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
         authorization = request.headers.get("Authorization")
 
         if authorization and authorization.replace("Bearer ", "") in self.tokens:
-            return [200, response_headers, json.dumps(self.sample_post_response_data)]
+            return (200, response_headers, json.dumps(self.sample_post_response_data))
 
         challenge_id = str(uuid.uuid4())
         token = str(uuid.uuid4())
@@ -135,18 +141,22 @@ class MultithreadedTokenServer:
         self.challenges[challenge_id] = MultithreadedTokenServer.Challenge(token, self.attempts)
         redirect_server = f"{REDIRECT_RESOURCE}/{challenge_id}"
         token_server = f"{TOKEN_RESOURCE}/{challenge_id}"
-        return [401, {'Www-Authenticate': f'Bearer x_redirect_server="{redirect_server}", '
+        return (401, {'Www-Authenticate': f'Bearer x_redirect_server="{redirect_server}", '
                                           f'x_token_server="{token_server}"',
-                      'Basic realm': '"Trino"'}, ""]
+                      'Basic realm': '"Trino"'}, "")
 
     # noinspection PyUnusedLocal
-    def get_token_callback(self, request, uri, response_headers):
+    def get_token_callback(self, request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
+        if uri is None:
+            uri = request.url
         challenge_id = uri.replace(f"{TOKEN_RESOURCE}/", "")
         challenge = self.challenges[challenge_id]
         challenge = challenge._replace(attempts=challenge.attempts - 1)
         self.challenges[challenge_id] = challenge
         if challenge.attempts < 0:
-            return [404, response_headers, "{}"]
+            return (404, response_headers, "{}")
         if challenge.attempts == 0:
-            return [200, response_headers, f'{{"token": "{challenge.token}"}}']
-        return [200, response_headers, f'{{"nextUri": "{uri}"}}']
+            return (200, response_headers, f'{{"token": "{challenge.token}"}}')
+        return (200, response_headers, f'{{"nextUri": "{uri}"}}')
