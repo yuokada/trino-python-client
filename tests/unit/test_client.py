@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
-import time
 import urllib
 import uuid
 from contextlib import nullcontext as does_not_raise
@@ -347,9 +346,8 @@ def test_request_timeout():
     port = 8080
     url = http_scheme + "://" + host + ":" + str(port) + constants.URL_STATEMENT_PATH
 
-    def long_call(request, uri, headers):
-        time.sleep(timeout * 2)
-        return (200, headers, "delayed success")
+    def long_call(request):
+        raise requests.exceptions.Timeout()
 
     responses.start()
     for method in [responses.POST, responses.GET]:
@@ -556,10 +554,10 @@ def test_oauth2_header_parsing(header, sample_post_response_data):
     token_server = f"{TOKEN_RESOURCE}/{challenge_id}"
 
     # noinspection PyUnusedLocal
-    def post_statement(request, uri, response_headers):
+    def post_statement(request):
         authorization = request.headers.get("Authorization")
         if authorization and authorization.replace("Bearer ", "") in token:
-            return (200, response_headers, json.dumps(sample_post_response_data))
+            return (200, {}, json.dumps(sample_post_response_data))
         return (401, {'Www-Authenticate': header.format(redirect_server=redirect_server, token_server=token_server),
                       'Basic realm': '"Trino"'}, "")
 
@@ -595,6 +593,7 @@ def test_oauth2_header_parsing(header, sample_post_response_data):
     assert len(_get_token_requests(challenge_id)) == 1
 
 
+@pytest.mark.parametrize("http_status", [400, 401, 500])
 @responses.activate
 def test_oauth2_authentication_fail_token_server(http_status, sample_post_response_data):
     token = str(uuid.uuid4())
@@ -606,10 +605,10 @@ def test_oauth2_authentication_fail_token_server(http_status, sample_post_respon
     post_statement_callback = PostStatementCallback(redirect_server, token_server, [token], sample_post_response_data)
 
     # bind post statement
-    responses.add(
+    responses.add_callback(
         method=responses.POST,
         url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-        json=post_statement_callback,
+        callback=post_statement_callback,
     )
 
     responses.add(

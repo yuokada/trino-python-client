@@ -18,7 +18,7 @@ import responses
 
 from trino import constants
 
-SERVER_ADDRESS = "https://coordinator"
+SERVER_ADDRESS = "https://coordinator:443"
 REDIRECT_PATH = "oauth2/initiate"
 TOKEN_PATH = "oauth2/token"
 REDIRECT_RESOURCE = f"{SERVER_ADDRESS}/{REDIRECT_PATH}"
@@ -48,10 +48,10 @@ class PostStatementCallback:
         self.tokens = tokens
         self.sample_post_response_data = sample_post_response_data
 
-    def __call__(self, request, uri, response_headers):
+    def __call__(self, request):
         authorization = request.headers.get("Authorization")
         if authorization and authorization.replace("Bearer ", "") in self.tokens:
-            return (200, response_headers, json.dumps(self.sample_post_response_data))
+            return (200, {}, json.dumps(self.sample_post_response_data))
         elif self.redirect_server is None and self.token_server is not None:
             return (401,
                     {
@@ -80,24 +80,24 @@ class GetTokenCallback:
         self.token = token
         self.attempts = attempts
 
-    def __call__(self, request, uri, response_headers):
+    def __call__(self, request):
         self.attempts -= 1
         if self.attempts < 0:
-            return (404, response_headers, "{}")
+            return (404, {}, "{}")
         if self.attempts == 0:
-            return (200, response_headers, f'{{"token": "{self.token}"}}')
-        return (200, response_headers, f'{{"nextUri": "{self.token_server}"}}')
+            return (200, {}, f'{{"token": "{self.token}"}}')
+        return (200, {}, f'{{"nextUri": "{self.token_server}"}}')
 
 
 def _get_token_requests(challenge_id):
     return list(filter(
-        lambda r: r.method == "GET" and r.url == f"{TOKEN_RESOURCE}/{challenge_id}",
+        lambda r: r.request.method == "GET" and r.request.url == f"{TOKEN_RESOURCE}/{challenge_id}",
         responses.calls))
 
 
 def _post_statement_requests():
     return list(filter(
-        lambda r: r.method == "POST" and r.url == f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
+        lambda r: r.request.method == "POST" and r.request.url == f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
         responses.calls))
 
 
@@ -111,23 +111,23 @@ class MultithreadedTokenServer:
         self.attempts = attempts
 
         # bind post statement
-        responses.add(
+        responses.add_callback(
             method=responses.POST,
             url=f"{SERVER_ADDRESS}{constants.URL_STATEMENT_PATH}",
-            body=self.post_statement_callback)
+            callback=self.post_statement_callback)
 
         # bind get token
-        responses.add(
+        responses.add_callback(
             method=responses.GET,
             url=re.compile(rf"{TOKEN_RESOURCE}/.*"),
-            body=self.get_token_callback)
+            callback=self.get_token_callback)
 
     # noinspection PyUnusedLocal
-    def post_statement_callback(self, request, uri, response_headers):
+    def post_statement_callback(self, request):
         authorization = request.headers.get("Authorization")
 
         if authorization and authorization.replace("Bearer ", "") in self.tokens:
-            return (200, response_headers, json.dumps(self.sample_post_response_data))
+            return (200, {}, json.dumps(self.sample_post_response_data))
 
         challenge_id = str(uuid.uuid4())
         token = str(uuid.uuid4())
@@ -140,13 +140,14 @@ class MultithreadedTokenServer:
                       'Basic realm': '"Trino"'}, "")
 
     # noinspection PyUnusedLocal
-    def get_token_callback(self, request, uri, response_headers):
+    def get_token_callback(self, request):
+        uri = request.url
         challenge_id = uri.replace(f"{TOKEN_RESOURCE}/", "")
         challenge = self.challenges[challenge_id]
         challenge = challenge._replace(attempts=challenge.attempts - 1)
         self.challenges[challenge_id] = challenge
         if challenge.attempts < 0:
-            return (404, response_headers, "{}")
+            return (404, {}, "{}")
         if challenge.attempts == 0:
-            return (200, response_headers, f'{{"token": "{challenge.token}"}}')
-        return (200, response_headers, f'{{"nextUri": "{uri}"}}')
+            return (200, {}, f'{{"token": "{challenge.token}"}}')
+        return (200, {}, f'{{"nextUri": "{uri}"}}')
