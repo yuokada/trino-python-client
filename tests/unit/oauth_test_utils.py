@@ -48,10 +48,12 @@ class PostStatementCallback:
         self.tokens = tokens
         self.sample_post_response_data = sample_post_response_data
 
-    def __call__(self, request):
+    def __call__(self, request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
         authorization = request.headers.get("Authorization")
         if authorization and authorization.replace("Bearer ", "") in self.tokens:
-            return (200, {}, json.dumps(self.sample_post_response_data))
+            return (200, response_headers, json.dumps(self.sample_post_response_data))
         elif self.redirect_server is None and self.token_server is not None:
             return (401,
                     {
@@ -80,13 +82,15 @@ class GetTokenCallback:
         self.token = token
         self.attempts = attempts
 
-    def __call__(self, request):
+    def __call__(self, request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
         self.attempts -= 1
         if self.attempts < 0:
-            return (404, {}, "{}")
+            return (404, response_headers, "{}")
         if self.attempts == 0:
-            return (200, {}, f'{{"token": "{self.token}"}}')
-        return (200, {}, f'{{"nextUri": "{self.token_server}"}}')
+            return (200, response_headers, f'{{"token": "{self.token}"}}')
+        return (200, response_headers, f'{{"nextUri": "{self.token_server}"}}')
 
 
 def _get_token_requests(challenge_id):
@@ -123,11 +127,13 @@ class MultithreadedTokenServer:
             callback=self.get_token_callback)
 
     # noinspection PyUnusedLocal
-    def post_statement_callback(self, request):
+    def post_statement_callback(self, request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
         authorization = request.headers.get("Authorization")
 
         if authorization and authorization.replace("Bearer ", "") in self.tokens:
-            return (200, {}, json.dumps(self.sample_post_response_data))
+            return (200, response_headers, json.dumps(self.sample_post_response_data))
 
         challenge_id = str(uuid.uuid4())
         token = str(uuid.uuid4())
@@ -140,14 +146,17 @@ class MultithreadedTokenServer:
                       'Basic realm': '"Trino"'}, "")
 
     # noinspection PyUnusedLocal
-    def get_token_callback(self, request):
-        uri = request.url
+    def get_token_callback(self, request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
+        if uri is None:
+            uri = request.url
         challenge_id = uri.replace(f"{TOKEN_RESOURCE}/", "")
         challenge = self.challenges[challenge_id]
         challenge = challenge._replace(attempts=challenge.attempts - 1)
         self.challenges[challenge_id] = challenge
         if challenge.attempts < 0:
-            return (404, {}, "{}")
+            return (404, response_headers, "{}")
         if challenge.attempts == 0:
-            return (200, {}, f'{{"token": "{challenge.token}"}}')
-        return (200, {}, f'{{"nextUri": "{uri}"}}')
+            return (200, response_headers, f'{{"token": "{challenge.token}"}}')
+        return (200, response_headers, f'{{"nextUri": "{uri}"}}')

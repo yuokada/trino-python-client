@@ -346,7 +346,7 @@ def test_request_timeout():
     port = 8080
     url = http_scheme + "://" + host + ":" + str(port) + constants.URL_STATEMENT_PATH
 
-    def long_call(request):
+    def long_call(request, uri=None, headers=None):
         raise requests.exceptions.Timeout()
 
     responses.start()
@@ -554,10 +554,12 @@ def test_oauth2_header_parsing(header, sample_post_response_data):
     token_server = f"{TOKEN_RESOURCE}/{challenge_id}"
 
     # noinspection PyUnusedLocal
-    def post_statement(request):
+    def post_statement(request, uri=None, response_headers=None):
+        if response_headers is None:
+            response_headers = {}
         authorization = request.headers.get("Authorization")
         if authorization and authorization.replace("Bearer ", "") in token:
-            return (200, {}, json.dumps(sample_post_response_data))
+            return (200, response_headers, json.dumps(sample_post_response_data))
         return (401, {'Www-Authenticate': header.format(redirect_server=redirect_server, token_server=token_server),
                       'Basic realm': '"Trino"'}, "")
 
